@@ -6,7 +6,7 @@
 #include <memory.h> // malloc
 //#include <conio.h> // getch
 
-#define _DEBUG_THIS
+//#define _DEBUG_THIS
 #ifdef _DEBUG_THIS
 #define XLOG(...) fprintf (stderr,__VA_ARGS__)
 #else
@@ -29,9 +29,9 @@ void print_list(lista *p){
 }
 
 // Sorts first n elements of array a[] in non-decreasing order.
-void stream_merge_sort(int n, lista **p, int sout __attribute__ ((stream))){
+void stream_merge_sort(int n, lista **p, lista* sout __attribute__ ((stream))){
   int i, j, k;
-  int x;
+  lista *x;
   int tmp;
   lista *p1, *p2, *pred, *last, *t1, *t2;
 
@@ -43,15 +43,20 @@ void stream_merge_sort(int n, lista **p, int sout __attribute__ ((stream))){
     }
   }
 
-  XLOG ("stream_merge_sort with n:%d\n", n);
-
+  lista *stmp = *p;
+  XLOG ("[%d][msort_main]task started: stream_merge_sort\n", n);
+  XLOG ("[%d][msort_main]*p is %p\n", n, *p);
+  
   if(n < 2)
 #pragma omp task output (sout << x)
     {
-      x = 1;
+      XLOG ("[%d][msort_atomic]tmp is %p\n",n,stmp);
+      x = stmp;
     }
   else
     {
+
+      XLOG ("[%d][msort_main]*p is %p\n",n, *p);
 
       // split the list on two halves
       int f = n / 2;		// f = number of elements in first half
@@ -64,34 +69,39 @@ void stream_merge_sort(int n, lista **p, int sout __attribute__ ((stream))){
       // Recursively sort both halves 
       p1 = *p;
 
-      int s1 __attribute__ ((stream));
-      int s2 __attribute__ ((stream));
-      int v1, v2;
+      lista *s1 __attribute__ ((stream));
+      lista *s2 __attribute__ ((stream));
+      lista *v1, *v2;
+      lista *ptmp = *p;
 
       stream_merge_sort(f, &p1, s1);
       stream_merge_sort(n-f, &p2, s2);
 
-#pragma omp task input (s1>>v1, s2>>v2) output (sout <<x)
+#pragma omp task input (s1>>v1, s2>>v2) output (sout <<x) firstprivate (p1,p2)
       {
+	XLOG ("[%d][task]merging started...\n",n);
+	XLOG ("[%d][task]v1:%p v2:%p \n",n,v1,v2);
+	XLOG ("[%d][task]p1:%p p2:%p\n",n,p1,p2);
+	p1=v1;p2=v2;
 	// Merge
 	// first element of the result list
-	*p = last = NULL; // result list
+	ptmp = last = NULL; // result list
 	t1 = p1;
 	t2 = p2;
-	if(p1 && p2){ // finds first element for the result list *p
+	if(p1 && p2){ // finds first element for the result list ptmp
 	  if(p1->inf < p2->inf){
-	    last = *p = p1;
+	    last = ptmp = p1;
 	    p1 = p1->next;
 	  }else{
-	    last = *p = p2;
+	    last = ptmp = p2;
 	    p2 = p2->next;
 	  }
 	}else{
 	  if(p1){
-	    last = *p = p1;
+	    last = ptmp = p1;
 	    p1 = p1->next;
 	  }else{
-	    last = *p = p2;
+	    last = ptmp = p2;
 	    p2 = p2->next;
 	  }
 	}
@@ -112,17 +122,18 @@ void stream_merge_sort(int n, lista **p, int sout __attribute__ ((stream))){
 	else
 	  last->next = p2;
 
-	x = v1 + v2;
+	XLOG ("[%d][task]",n);
+	x = ptmp;
       }
     }
 }
  
 // Example of usage: 
 int main(){
-  int stream __attribute__ ((stream));
-  int result;
+  lista* stream __attribute__ ((stream));
+  lista *result;
 
-  int n = 8, i;
+  int n = 150, i;
   lista *p = NULL, *p1, *last;
 
   // initialize list/array
@@ -135,14 +146,14 @@ int main(){
     else
       last = last->next = p1; // adds element to the end of the list
   }
-  print_list(p);
 
   // merge
   stream_merge_sort(0, &p, stream);
 
-#pragma omp task input (stream >> result) firstprivate (p)
+#pragma omp task input (stream >> result) 
   {
     // print result
+    p=result;
     print_list(p);
     //free memory reserved for the list
     while(p){
